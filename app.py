@@ -6,6 +6,10 @@ import requests
 from rapidfuzz import fuzz
 import smtplib
 from email.mime.text import MIMEText
+import nltk
+nltk.download('stopwords')
+nltk.data.path.append('/usr/local/nltk_data')
+
 
 # ----------------- Job Scraping Functions ----------------- #
 
@@ -79,6 +83,7 @@ def get_adzuna_jobs(api_key, keyword, location, country_code):
                 for job in response.json()['results']]
     return []
 
+
 # ----------------- Resume Parsing ----------------- #
 def parse_resume(file_path):
     resume_data = ResumeParser(file_path).get_extracted_data()
@@ -112,6 +117,7 @@ def send_email_notification(jobs, recipient_email):
 
 # ----------------- Streamlit UI ----------------- #
 def main():
+    print(nltk.data.find('corpora/stopwords'))
     st.title("Global AI/ML Job Matching Assistant")
     st.sidebar.header("Upload Resume & Preferences")
 
@@ -123,7 +129,7 @@ def main():
         "Australia", "United States", "United Kingdom", "Canada", "India",
         "Germany", "France", "Singapore", "United Arab Emirates", "Japan"
     ])
-    recipient_email = st.sidebar.text_input("Your Email for Notifications", "")
+    recipient_email = st.sidebar.text_input("Your Email for Notifications", "")       
 
     if uploaded_file and st.sidebar.button("Find Jobs"):
         # Parse Resume
