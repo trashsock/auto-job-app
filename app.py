@@ -97,7 +97,7 @@ def parse_resume(file_path, nlp):
 
 # ----------------- Job Scraping Functions ----------------- #
 def get_seek_jobs(keyword, location, country):
-    """Fetch jobs from Seek with error handling"""
+    """Fetch jobs from Seek with debugging"""
     try:
         country_domains = {
             "Australia": "seek.com.au",
@@ -108,39 +108,83 @@ def get_seek_jobs(keyword, location, country):
         }
         domain = country_domains.get(country)
         if not domain:
+            st.warning(f"No Seek domain found for {country}")
             return []
         
-        base_url = f"https://www.{domain}/{keyword}-jobs/in-{location}"
-        response = requests.get(base_url, verify=True, timeout=10)
-        jobs = []
+        # URL encode the keyword and location
+        keyword = requests.utils.quote(keyword)
+        location = requests.utils.quote(location)
+        base_url = f"https://www.{domain}/jobs?keywords={keyword}&where={location}"
+        
+        # Add user agent to mimic browser
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        st.info(f"Fetching from Seek: {base_url}")
+        response = requests.get(base_url, headers=headers, verify=True, timeout=10)
         
         if response.status_code == 200:
             soup = BeautifulSoup(response.content, 'html.parser')
-            for job in soup.find_all('div', class_='card'):
+            jobs = []
+            
+            # Debug info
+            st.write(f"Seek Response Length: {len(response.content)}")
+            
+            # Look for job listings with different possible class names
+            job_elements = (
+                soup.find_all('article', class_='_1wkzzau0') or  # Try modern class
+                soup.find_all('article', class_='job-card') or    # Try alternative class
+                soup.find_all('div', class_='job-card') or       # Try div instead
+                []
+            )
+            
+            st.write(f"Found {len(job_elements)} job elements on Seek")
+            
+            for job in job_elements[:10]:  # Limit to first 10 jobs
                 try:
-                    title = job.find('a', class_='job-title').text.strip()
-                    description = job.find('div', class_='job-description').text.strip()
-                    jobs.append({
-                        'source': 'Seek',
-                        'title': title,
-                        'description': description
-                    })
-                except AttributeError:
+                    title = (
+                        job.find('h3', class_='job-title').text.strip() if job.find('h3', class_='job-title') else
+                        job.find('a', class_='job-title').text.strip() if job.find('a', class_='job-title') else
+                        job.find('span', class_='title').text.strip() if job.find('span', class_='title') else
+                        'No title found'
+                    )
+                    
+                    description = (
+                        job.find('span', class_='job-description').text.strip() if job.find('span', class_='job-description') else
+                        job.find('div', class_='job-description').text.strip() if job.find('div', class_='job-description') else
+                        job.find('div', class_='description').text.strip() if job.find('div', class_='description') else
+                        'No description found'
+                    )
+                    
+                    if title != 'No title found' or description != 'No description found':
+                        jobs.append({
+                            'source': 'Seek',
+                            'title': title,
+                            'description': description
+                        })
+                except Exception as e:
+                    st.warning(f"Error parsing job listing: {str(e)}")
                     continue
-        return jobs
-    except requests.exceptions.RequestException as e:
+            
+            return jobs
+        else:
+            st.warning(f"Seek returned status code: {response.status_code}")
+            return []
+            
+    except Exception as e:
         st.warning(f"Error fetching jobs from Seek: {str(e)}")
         return []
 
 def get_indeed_jobs(keyword, location, country):
-    """Fetch jobs from Indeed with error handling"""
+    """Fetch jobs from Indeed with debugging"""
     try:
         country_domains = {
             "Australia": "au",
             "United States": "com",
-            "United Kingdom": "uk",
+            "United Kingdom": "co.uk",
             "Canada": "ca",
-            "India": "in",
+            "India": "co.in",
             "Germany": "de",
             "France": "fr",
             "Singapore": "sg",
@@ -149,44 +193,112 @@ def get_indeed_jobs(keyword, location, country):
         }
         domain = country_domains.get(country)
         if not domain:
+            st.warning(f"No Indeed domain found for {country}")
             return []
         
-        rss_url = f"https://{domain}.indeed.com/rss?q={keyword}&l={location}"
-        response = requests.get(rss_url, verify=True, timeout=10)
-        jobs = []
+        # URL encode the keyword and location
+        keyword = requests.utils.quote(keyword)
+        location = requests.utils.quote(location)
         
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, 'xml')
-            for item in soup.find_all('item'):
-                jobs.append({
-                    'source': 'Indeed',
-                    'title': item.title.text if item.title else 'No title',
-                    'description': item.description.text if item.description else 'No description'
-                })
+        # Try both RSS and regular HTML endpoints
+        urls = [
+            f"https://{domain}.indeed.com/jobs?q={keyword}&l={location}",
+            f"https://{domain}.indeed.com/rss?q={keyword}&l={location}"
+        ]
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        jobs = []
+        for url in urls:
+            st.info(f"Fetching from Indeed: {url}")
+            response = requests.get(url, headers=headers, verify=True, timeout=10)
+            
+            if response.status_code == 200:
+                st.write(f"Indeed Response Length: {len(response.content)}")
+                
+                if 'rss' in url:
+                    # Parse RSS feed
+                    soup = BeautifulSoup(response.content, 'xml')
+                    items = soup.find_all('item')
+                    st.write(f"Found {len(items)} jobs in RSS feed")
+                    
+                    for item in items[:10]:  # Limit to first 10 jobs
+                        jobs.append({
+                            'source': 'Indeed',
+                            'title': item.title.text if item.title else 'No title',
+                            'description': item.description.text if item.description else 'No description'
+                        })
+                else:
+                    # Parse HTML
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    job_cards = (
+                        soup.find_all('div', class_='job_seen_beacon') or
+                        soup.find_all('div', class_='jobsearch-SerpJobCard') or
+                        soup.find_all('div', class_='job-card') or
+                        []
+                    )
+                    
+                    st.write(f"Found {len(job_cards)} job cards in HTML")
+                    
+                    for card in job_cards[:10]:  # Limit to first 10 jobs
+                        try:
+                            title = (
+                                card.find('h2', class_='jobTitle').text.strip() if card.find('h2', class_='jobTitle') else
+                                card.find('a', class_='jobtitle').text.strip() if card.find('a', class_='jobtitle') else
+                                'No title found'
+                            )
+                            
+                            description = (
+                                card.find('div', class_='job-snippet').text.strip() if card.find('div', class_='job-snippet') else
+                                card.find('div', class_='summary').text.strip() if card.find('div', class_='summary') else
+                                'No description found'
+                            )
+                            
+                            if title != 'No title found' or description != 'No description found':
+                                jobs.append({
+                                    'source': 'Indeed',
+                                    'title': title,
+                                    'description': description
+                                })
+                        except Exception as e:
+                            st.warning(f"Error parsing Indeed job card: {str(e)}")
+                            continue
+            
+            else:
+                st.warning(f"Indeed returned status code: {response.status_code}")
+        
         return jobs
-    except requests.exceptions.RequestException as e:
+        
+    except Exception as e:
         st.warning(f"Error fetching jobs from Indeed: {str(e)}")
         return []
 
-#------------------ Fetch Jobs with Progress -----------------#
+# Update the fetch_all_jobs function to show more debugging info
 def fetch_all_jobs(keyword, location, country):
-    """Fetch jobs from all sources with progress tracking"""
+    """Fetch jobs from all sources with detailed progress tracking"""
     all_jobs = []
     
     with st.spinner('Fetching jobs...'):
         progress_bar = st.progress(0)
         
         # Fetch from Seek
+        st.write("Attempting to fetch jobs from Seek...")
         progress_bar.progress(25)
         seek_jobs = get_seek_jobs(keyword, location, country)
+        st.write(f"Found {len(seek_jobs)} jobs from Seek")
         all_jobs.extend(seek_jobs)
         
         # Fetch from Indeed
+        st.write("Attempting to fetch jobs from Indeed...")
         progress_bar.progress(75)
         indeed_jobs = get_indeed_jobs(keyword, location, country)
+        st.write(f"Found {len(indeed_jobs)} jobs from Indeed")
         all_jobs.extend(indeed_jobs)
         
         progress_bar.progress(100)
+        st.write(f"Total jobs found: {len(all_jobs)}")
     
     return all_jobs
 
@@ -215,6 +327,9 @@ def main():
     recipient_email = st.sidebar.text_input("Your Email for Notifications", "")
 
     if uploaded_file and st.sidebar.button("Find Jobs"):
+        # Save the uploaded file as temp_resume.pdf
+        with open("temp_resume.pdf", "wb") as f:
+            f.write(uploaded_file.getbuffer())
         try:
             # Parse resume
             resume_data = parse_resume("temp_resume.pdf", nlp)
