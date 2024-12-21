@@ -7,8 +7,32 @@ from rapidfuzz import fuzz
 import smtplib
 from email.mime.text import MIMEText
 import nltk
-nltk.download('stopwords')
-nltk.data.path.append('/usr/local/nltk_data')
+import os
+
+# ----------------- NLTK Setup ----------------- #
+def setup_nltk():
+    """Initialize NLTK and download required data."""
+    try:
+        # Create NLTK data directory if it doesn't exist
+        nltk_data_dir = '/home/vscode/nltk_data'
+        if not os.path.exists(nltk_data_dir):
+            os.makedirs(nltk_data_dir)
+        
+        # Set NLTK data path
+        nltk.data.path.append(nltk_data_dir)
+        
+        # Download required NLTK data
+        try:
+            nltk.data.find('corpora/stopwords')
+        except LookupError:
+            nltk.download('stopwords', download_dir=nltk_data_dir)
+            nltk.download('punkt', download_dir=nltk_data_dir)
+            nltk.download('averaged_perceptron_tagger', download_dir=nltk_data_dir)
+            nltk.download('universal_tagset', download_dir=nltk_data_dir)
+            st.success("Successfully downloaded NLTK data!")
+    except Exception as e:
+        st.error(f"Error setting up NLTK: {str(e)}")
+        raise e
 
 
 # ----------------- Job Scraping Functions ----------------- #
@@ -117,7 +141,8 @@ def send_email_notification(jobs, recipient_email):
 
 # ----------------- Streamlit UI ----------------- #
 def main():
-    print(nltk.data.find('corpora/stopwords'))
+    # Setup NLTK first
+    setup_nltk()
     st.title("Global AI/ML Job Matching Assistant")
     st.sidebar.header("Upload Resume & Preferences")
 
